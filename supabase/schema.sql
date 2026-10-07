@@ -232,8 +232,8 @@ insert into public.admin_permissions(role, permission) values
 on conflict do nothing;
 
 insert into public.settings(key, value) values
- ('bootstrap_admin_email', '"jloodna@gmail.com"'),
- ('store', '{"name":"JLODNA Plas","tagline":"Magazin global en Haïti","email":"jloodna@gmail.com","phone":"","currency":"HTG"}'),
+ ('bootstrap_admin_email', '"jlodnaplas@gmail.com"'),
+ ('store', '{"name":"JLODNA Plas","tagline":"Magazin global en Haïti","email":"jlodnaplas@gmail.com","phone":"+50955561461","currency":"HTG"}'),
  ('shipping', '{"flat_fee":250,"free_over":5000}'),
  ('payment_methods', '{"cod":{"enabled":true,"label":"Paiement à la livraison"},"moncash":{"enabled":false,"label":"MonCash"},"natcash":{"enabled":false,"label":"NatCash"},"card":{"enabled":false,"label":"Carte bancaire"},"paypal":{"enabled":false,"label":"PayPal"}}')
 on conflict (key) do nothing;
