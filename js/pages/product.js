@@ -68,7 +68,7 @@ function render(p) {
     clamp();
   };
   refresh();
-  $('#q-').onclick = () => { q.value = +q.value - 1; clamp(); }; $('#q+').onclick = () => { q.value = +q.value + 1; clamp(); }; q.onchange = clamp;
+  document.getElementById('q-').onclick = () => { q.value = +q.value - 1; clamp(); }; document.getElementById('q+').onclick = () => { q.value = +q.value + 1; clamp(); }; q.onchange = clamp;
   root.querySelectorAll('.thumbs button').forEach((b) => (b.onclick = () => { const i = imgs[+b.dataset.i]; $('#main-img').src = i.url; root.querySelectorAll('.thumbs button').forEach((x) => x.removeAttribute('aria-current')); b.setAttribute('aria-current', 'true'); }));
   const add = (go) => { const v = current(); if (!v || availableOf(v) <= 0) return; addItem(v.id, p.id, +q.value, availableOf(v)); if (go) location.href = '/checkout'; };
   $('#add').onclick = () => add(false); $('#buy').onclick = () => add(true);
