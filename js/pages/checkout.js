@@ -4,7 +4,7 @@ import { requireUser, getSession } from '../auth.js';
 import { getCart, clearCart } from '../cart.js';
 import { getCartLines } from '../products.js';
 import { isDefaultVariant } from '../variants.js';
-import { $, esc, fmtPrice, fmtDate, isEmail, setLoading, friendlyError, postJSON, STATUS } from '../utils.js';
+import { $, esc, fmtPrice, fmtDate, isEmail, setLoading, friendlyError, postJSON, safeUrl, STATUS } from '../utils.js';
 
 initLayout();
 let user; let totals = { subtotal: 0, fee: 0, discount: 0, total: 0 };
@@ -53,10 +53,32 @@ const coupon = sessionStorage.getItem('jl_coupon') || null;
     clearCart(); sessionStorage.removeItem('jl_coupon');
     const s = await getSession(); postJSON('/api/notify', { event: 'order_created', order_id: data.id }, s?.access_token).catch(() => {});
     const { data: o } = await sb.from('orders').select('*, order_items(name, variant_name, variant, quantity, unit_price)').eq('id', data.id).maybeSingle();
+
+    // Paiement manuel par lien (ex. CSH DIREK) : le paiement reste « en attente » jusqu'à la vérification par un administrateur.
+    const cfg = (methods.find(([k]) => k === method) || [])[1] || {};
+    const payUrl = cfg.type === 'manual_link' ? safeUrl(cfg.pay_url) : null;
+    const payBlock = payUrl ? `<div class="form-card" id="manual-pay" style="margin-top:16px"><h3>Peye ak ${esc(cfg.label)}</h3>
+      <ol><li>Peze bouton an pou louvri paj peman ${esc(cfg.label)}.</li>
+      <li>Voye montan egzak la: <strong>${fmtPrice(o.total)}</strong>.</li>
+      <li>Mete nimewo kòmand ou a (<strong>${esc(o.order_number)}</strong>) nan nòt peman an si sa posib.</li>
+      <li>Apre peman an, ekri nimewo tranzaksyon an anba a epi voye l.</li></ol>
+      <p class="muted">Kòmand ou a rete <strong>an atant</strong> jiskaske nou verifye ke lajan an antre. Louvri lyen an pa konfime peman an.</p>
+      <p><a class="btn primary" href="${esc(payUrl)}" target="_blank" rel="noopener noreferrer">Peye ak ${esc(cfg.label)}</a></p>
+      <div class="field"><label for="pref">Nimewo tranzaksyon (si ou genyen)</label><input id="pref" maxlength="100"></div>
+      <button class="btn ghost" id="pref-btn" type="button">Voye referans lan</button>
+      <p class="err-msg" id="pref-msg" role="status"></p></div>` : '';
+
     $('#co-root').innerHTML = `<div class="form-card" style="max-width:560px"><h2>Votre commande a été enregistrée.</h2>
       <p><strong>Numéro : ${esc(o.order_number)}</strong></p><p>Date : ${fmtDate(o.created_at)}<br>Statut : <span class="status new">${STATUS[o.status]}</span><br>Paiement : ${esc(methods.find(([k]) => k === o.payment_method)?.[1].label || o.payment_method)}</p>
       <div class="summary">${o.order_items.map((i) => `<div class="line"><span>${esc(i.name)}${i.variant && Object.keys(i.variant).length ? ` (${esc(i.variant_name)})` : ''} × ${i.quantity}</span><span>${fmtPrice(i.unit_price * i.quantity)}</span></div>`).join('')}<div class="line"><span>Livraison</span><span>${o.shipping_fee ? fmtPrice(o.shipping_fee) : 'Offerte'}</span></div>${o.discount > 0 ? `<div class="line"><span>Réduction</span><span>− ${fmtPrice(o.discount)}</span></div>` : ''}<div class="line total"><span>Montant</span><span>${fmtPrice(o.total)}</span></div></div>
+      ${payBlock}
       <p style="margin-top:16px" class="row"><a class="btn primary" href="/orders">Suivre mes commandes</a><a class="btn ghost" href="/shop">Continuer les achats</a></p></div>`;
+    $('#pref-btn')?.addEventListener('click', async () => {
+      const ref = $('#pref').value.trim(); const msg = $('#pref-msg');
+      if (ref.length < 4) { msg.textContent = 'Antre yon nimewo valid.'; return; }
+      const { error: refErr } = await sb.rpc('submit_payment_reference', { p_order_id: o.id, p_reference: ref });
+      msg.textContent = refErr ? friendlyError(refErr) : 'Mèsi! N ap verifye peman an.';
+    });
     window.scrollTo(0, 0);
   });
 })();
