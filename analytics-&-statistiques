@@ -1,0 +1,4 @@
+git status
+git add admin/analytics.html js/analytics-tracker.js js/pages/admin-analytics.js supabase/analytics.sql js/layout.js
+git commit -m "Ajout page Analytics & Statistiques"
+git push
