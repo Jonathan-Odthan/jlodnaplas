@@ -1,3 +1,4 @@
+import './analytics-tracker.js';
 import { sb, configured } from './supabase.js';
 import { getUser, getAdminRole, signOut } from './auth.js';
 import { cartCount, mergeServerCart } from './cart.js';
