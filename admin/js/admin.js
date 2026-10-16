@@ -14,6 +14,7 @@ const ROUTES = [
   ['customers', 'Clients', 'customers.read', 'customers.js'],
   ['inventory', 'Stock', 'inventory.write', 'inventory.js'],
   ['coupons', 'Promotions', 'coupons.write', 'coupons.js'],
+  ['analytics', 'Analytics & Statistiques', 'analytics.read', 'analytics.js'],
   ['reviews', 'Avis', 'reviews.moderate', 'reviews.js'],
   ['notifications', 'Notifications', null, 'notifications.js'],
   ['messages', 'Messages', 'messages.write', 'messages.js'],
