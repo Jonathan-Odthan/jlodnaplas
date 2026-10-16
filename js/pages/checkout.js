@@ -32,8 +32,17 @@ const coupon = sessionStorage.getItem('jl_coupon') || null;
   let discount = 0; if (coupon) { const { data } = await sb.rpc('validate_coupon', { p_code: coupon, p_subtotal: subtotal }); if (data?.valid) discount = data.discount; }
   totals = { subtotal, fee, discount, total: Math.max(subtotal + fee - discount, 0) };
   $('#co-sum').innerHTML = `<h2 style="font-size:1.2rem">Résumé</h2>${lines}<div class="line"><span>Sous-total</span><span>${fmtPrice(subtotal)}</span></div><div class="line"><span>Livraison</span><span>${fee ? fmtPrice(fee) : 'Offerte'}</span></div>${discount ? `<div class="line"><span>Réduction</span><span>− ${fmtPrice(discount)}</span></div>` : ''}<div class="line total"><span>Total</span><span>${fmtPrice(totals.total)}</span></div>`;
-  const methods = Object.entries(pm.data?.value || {}).filter(([, v]) => v.enabled);
-  $('#pay').innerHTML = methods.length ? methods.map(([k, v], i) => `<label style="display:flex;gap:10px;align-items:center;font-weight:400"><input type="radio" name="pay" value="${esc(k)}" style="width:auto;min-height:0" ${i === 0 ? 'checked' : ''}> ${esc(v.label)}</label>`).join('') : '<p class="err-msg">Aucun mode de paiement disponible.</p>';
+  const methods = Object.entries(pm.data?.value || {}).filter(([k, v]) => v.enabled && k !== 'moncash');
+  const validNum = (n) => /^\+?[0-9 ]{8,20}$/.test(String(n || ''));
+  const helpOf = (k) => {
+    const c = (methods.find(([x]) => x === k) || [])[1] || {};
+    if (c.type === 'manual_number' && validNum(c.number)) return `<strong>${esc(c.label)}</strong> : apre ou fin konfime kòmand lan, voye lajan an sou nimewo <strong style="font-size:1.25rem">${esc(c.number)}</strong>. Kòmand lan rete <strong>an atant</strong> jiskaske nou verifye peman an.`;
+    if (c.type === 'manual_link') return `<strong>${esc(c.label)}</strong> : apre ou fin konfime kòmand lan, w ap jwenn lyen pou peye a. Kòmand lan rete <strong>an atant</strong> jiskaske nou verifye peman an.`;
+    return '';
+  };
+  $('#pay').innerHTML = methods.length ? methods.map(([k, v], i) => `<label style="display:flex;gap:10px;align-items:center;font-weight:400"><input type="radio" name="pay" value="${esc(k)}" style="width:auto;min-height:0" ${i === 0 ? 'checked' : ''}> ${esc(v.label)}</label>`).join('') + '<div id="pay-help" class="muted" style="margin-top:8px"></div>' : '<p class="err-msg">Aucun mode de paiement disponible.</p>';
+  const showHelp = () => { const h = $('#pay-help'); if (!h) return; const sel = document.querySelector('input[name="pay"]:checked'); h.innerHTML = sel ? helpOf(sel.value) : ''; };
+  $('#pay').addEventListener('change', showHelp); showHelp();
   const f = $('#co-form');
   f.full_name.value = addr.data?.full_name || [prof.data?.first_name, prof.data?.last_name].filter(Boolean).join(' ');
   f.phone.value = addr.data?.phone || prof.data?.phone || ''; f.email.value = user.email || '';
@@ -54,18 +63,23 @@ const coupon = sessionStorage.getItem('jl_coupon') || null;
     const s = await getSession(); postJSON('/api/notify', { event: 'order_created', order_id: data.id }, s?.access_token).catch(() => {});
     const { data: o } = await sb.from('orders').select('*, order_items(name, variant_name, variant, quantity, unit_price)').eq('id', data.id).maybeSingle();
 
-    // Paiement manuel par lien (ex. CSH DIREK) : le paiement reste « en attente » jusqu'à la vérification par un administrateur.
+    // Paiement manuel (lien ou numéro) : le paiement reste « en attente » jusqu'à la vérification par un administrateur.
     const cfg = (methods.find(([k]) => k === method) || [])[1] || {};
     const payUrl = cfg.type === 'manual_link' ? safeUrl(cfg.pay_url) : null;
-    const payBlock = payUrl ? `<div class="form-card" id="manual-pay" style="margin-top:16px"><h3>Peye ak ${esc(cfg.label)}</h3>
-      <ol><li>Peze bouton an pou louvri paj peman ${esc(cfg.label)}.</li>
-      <li>Voye montan egzak la: <strong>${fmtPrice(o.total)}</strong>.</li>
-      <li>Mete nimewo kòmand ou a (<strong>${esc(o.order_number)}</strong>) nan nòt peman an si sa posib.</li>
-      <li>Apre peman an, ekri nimewo tranzaksyon an anba a epi voye l.</li></ol>
-      <p class="muted">Kòmand ou a rete <strong>an atant</strong> jiskaske nou verifye ke lajan an antre. Louvri lyen an pa konfime peman an.</p>
-      <p><a class="btn primary" href="${esc(payUrl)}" target="_blank" rel="noopener noreferrer">Peye ak ${esc(cfg.label)}</a></p>
+    const payNum = cfg.type === 'manual_number' && validNum(cfg.number) ? cfg.number : null;
+    const payBlock = (payUrl || payNum) ? `<div class="form-card" id="manual-pay" style="margin-top:16px">
+      <details open><summary><strong>Enstriksyon pou peye ak ${esc(cfg.label)}</strong></summary>
+      ${payNum ? `<p style="font-size:1.6rem;font-weight:700;margin:10px 0">${esc(payNum)}</p>` : ''}
+      <ol>
+        ${payNum ? `<li>Louvri aplikasyon ${esc(cfg.label)} ou, epi voye lajan an sou nimewo <strong>${esc(payNum)}</strong>.</li>` : `<li>Peze bouton an pou louvri paj peman ${esc(cfg.label)}.</li>`}
+        <li>Voye montan egzak la: <strong>${fmtPrice(o.total)}</strong> (pa plis, pa mwens).</li>
+        <li>Nimewo kòmand ou a se <strong>${esc(o.order_number)}</strong>. Si ou ka, ekri l nan nòt peman an.</li>
+        <li>Apre ou fin peye, antre nimewo tranzaksyon an anba a (si ou genyen l), epi peze « Mwen peye ».</li>
+      </ol></details>
+      <p class="muted">Kòmand ou a rete <strong>an atant</strong> jiskaske nou verifye ke lajan an antre. Anyen pa make kòmand lan kòm peye otomatikman.</p>
+      ${payUrl ? `<p><a class="btn primary" href="${esc(payUrl)}" target="_blank" rel="noopener noreferrer">Peye ak ${esc(cfg.label)}</a></p>` : `<p><button class="btn primary" id="copy-num" type="button">Peye ak ${esc(cfg.label)}</button></p>`}
       <div class="field"><label for="pref">Nimewo tranzaksyon (si ou genyen)</label><input id="pref" maxlength="100"></div>
-      <button class="btn ghost" id="pref-btn" type="button">Voye referans lan</button>
+      <button class="btn ghost" id="pref-btn" type="button">Mwen peye</button>
       <p class="err-msg" id="pref-msg" role="status"></p></div>` : '';
 
     $('#co-root').innerHTML = `<div class="form-card" style="max-width:560px"><h2>Votre commande a été enregistrée.</h2>
@@ -73,11 +87,18 @@ const coupon = sessionStorage.getItem('jl_coupon') || null;
       <div class="summary">${o.order_items.map((i) => `<div class="line"><span>${esc(i.name)}${i.variant && Object.keys(i.variant).length ? ` (${esc(i.variant_name)})` : ''} × ${i.quantity}</span><span>${fmtPrice(i.unit_price * i.quantity)}</span></div>`).join('')}<div class="line"><span>Livraison</span><span>${o.shipping_fee ? fmtPrice(o.shipping_fee) : 'Offerte'}</span></div>${o.discount > 0 ? `<div class="line"><span>Réduction</span><span>− ${fmtPrice(o.discount)}</span></div>` : ''}<div class="line total"><span>Montant</span><span>${fmtPrice(o.total)}</span></div></div>
       ${payBlock}
       <p style="margin-top:16px" class="row"><a class="btn primary" href="/orders">Suivre mes commandes</a><a class="btn ghost" href="/shop">Continuer les achats</a></p></div>`;
+    $('#copy-num')?.addEventListener('click', async () => {
+      const msg = $('#pref-msg');
+      try { await navigator.clipboard.writeText(payNum.replace(/\s/g, '')); msg.textContent = 'Nimewo a kopye. Louvri ' + cfg.label + ' pou voye lajan an.'; }
+      catch { msg.textContent = 'Kopye nimewo a: ' + payNum; }
+    });
     $('#pref-btn')?.addEventListener('click', async () => {
-      const ref = $('#pref').value.trim(); const msg = $('#pref-msg');
-      if (ref.length < 4) { msg.textContent = 'Antre yon nimewo valid.'; return; }
-      const { error: refErr } = await sb.rpc('submit_payment_reference', { p_order_id: o.id, p_reference: ref });
-      msg.textContent = refErr ? friendlyError(refErr) : 'Mèsi! N ap verifye peman an.';
+      const ref = $('#pref').value.trim(); const msg = $('#pref-msg'); const b = $('#pref-btn');
+      if (ref && ref.length < 4) { msg.textContent = 'Antre yon nimewo valid.'; return; }
+      b.disabled = true;
+      const { error: refErr } = await sb.rpc('submit_payment_reference', { p_order_id: o.id, p_reference: ref || null });
+      if (refErr) { b.disabled = false; msg.textContent = friendlyError(refErr); return; }
+      msg.textContent = 'Mèsi! N ap verifye peman an. Kòmand lan rete an atant jiskaske nou konfime l.';
     });
     window.scrollTo(0, 0);
   });
