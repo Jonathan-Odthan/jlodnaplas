@@ -19,6 +19,7 @@ const ROUTES = [
   ['notifications', 'Notifications', null, 'notifications.js'],
   ['messages', 'Messages', 'messages.write', 'messages.js'],
   ['settings', 'Paramètres', 'settings.write', 'settings.js'],
+  ['assistant', 'Assistant JLODNA As', 'settings.write', 'assistant.js'],
   ['audit-logs', 'Journal d’audit', 'audit.read', 'audit.js'],
 ];
 export const ctx = { role: null, perms: new Set(), user: null, can(p) { return !p || this.role === 'SUPER_ADMIN' || this.perms.has(p); } };
