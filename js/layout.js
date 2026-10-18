@@ -49,6 +49,7 @@ export async function initLayout() {
       initNotifications(); mergeServerCart();
       getAdminRole().then((r) => { if (r) a.insertAdjacentHTML('afterend', '<a class="icon-btn adm" href="/admin/" aria-label="Espace admin" title="Admin">⚙</a>'); });
     }
+    import('./jlodna-as-loader.js'); // assistant JLODNA As (chargé en temps libre, sans bloquer la page)
   }
   if ('serviceWorker' in navigator) navigator.serviceWorker.register('/sw.js').catch(() => {});
 }
