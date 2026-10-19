@@ -10,6 +10,17 @@ const MAX_TOOL_ROUNDS = 4;
 const FALLBACK =
   'Mwen gen yon ti pwoblèm teknik pou kounye a. Tanpri eseye ankò nan kèk minit. / Un petit problème technique est survenu, veuillez réessayer dans quelques minutes.';
 
+// Variables obligatoires (noms seulement, jamais les valeurs)
+const REQUIRED_ENV = ['SUPABASE_URL', 'SUPABASE_SERVICE_ROLE_KEY', 'SUPABASE_ANON_KEY', 'AI_API_KEY'];
+
+function missingEnv() {
+  const missing = REQUIRED_ENV.filter((k) => !process.env[k]);
+  const provider = (process.env.AI_PROVIDER || 'anthropic').toLowerCase();
+  if (!['anthropic', 'openai'].includes(provider)) missing.push('AI_PROVIDER (valeur invalide : anthropic ou openai)');
+  if (provider === 'openai' && !process.env.AI_MODEL) missing.push('AI_MODEL (obligatoire avec AI_PROVIDER=openai)');
+  return missing;
+}
+
 let settingsCache = { at: 0, value: null };
 async function assistantSettings() {
   if (Date.now() - settingsCache.at < 30000) return settingsCache.value;
@@ -51,7 +62,8 @@ async function rateOk(key, max, windowSeconds) {
       body: { p_key: key, p_max: max, p_window_seconds: windowSeconds },
     });
     return ok !== false;
-  } catch (_) {
+  } catch (e) {
+    console.warn('jlodna-as: limiteur indisponible (fonction assistant_rate_check absente ?)', e && e.message);
     return false; // fail closed if the limiter is unavailable
   }
 }
@@ -70,12 +82,23 @@ function send(res, status, body) {
 }
 
 module.exports = async function handler(req, res) {
+  // Diagnostic : ouvrir /api/jlodna-as dans le navigateur (affiche les NOMS des variables manquantes, jamais les valeurs)
+  if (req.method === 'GET') {
+    const missing = missingEnv();
+    return send(res, 405, { error: 'METHOD_NOT_ALLOWED', configured: missing.length === 0, missing });
+  }
   if (req.method !== 'POST') return send(res, 405, { error: 'METHOD_NOT_ALLOWED' });
-  if (!allowedOrigin(req)) return send(res, 403, { error: 'FORBIDDEN' });
-  if (!process.env.SUPABASE_URL || !process.env.SUPABASE_SERVICE_ROLE_KEY) return send(res, 503, { error: 'ASSISTANT_NOT_CONFIGURED' });
+  if (!allowedOrigin(req)) {
+    console.warn('jlodna-as: origine refusée', req.headers.origin);
+    return send(res, 403, { error: 'FORBIDDEN' });
+  }
 
-  const llm = getLLM();
-  if (!llm) return send(res, 503, { error: 'ASSISTANT_NOT_CONFIGURED' });
+  const missing = missingEnv();
+  const llm = missing.length ? null : getLLM();
+  if (missing.length || !llm) {
+    console.warn('jlodna-as non configuré. Manque :', missing.join(', ') || 'AI_MODEL ou AI_PROVIDER invalide');
+    return send(res, 503, { error: 'ASSISTANT_NOT_CONFIGURED' });
+  }
 
   const body = typeof req.body === 'string' ? safeJson(req.body) : req.body;
   const message = body && typeof body.message === 'string' ? body.message.trim() : '';
@@ -83,7 +106,10 @@ module.exports = async function handler(req, res) {
 
   try {
     const settings = await assistantSettings();
-    if (!settings.enabled) return send(res, 503, { error: 'ASSISTANT_DISABLED' });
+    if (!settings.enabled) {
+      console.warn('jlodna-as: désactivé dans settings (key=assistant, enabled=false)');
+      return send(res, 503, { error: 'ASSISTANT_DISABLED' });
+    }
 
     const ip = String(req.headers['x-forwarded-for'] || req.socket?.remoteAddress || '').split(',')[0].trim();
     const ipKey = crypto.createHash('sha256').update(ip + (process.env.RATE_LIMIT_SALT || process.env.SUPABASE_SERVICE_ROLE_KEY)).digest('hex').slice(0, 32);
@@ -97,7 +123,6 @@ module.exports = async function handler(req, res) {
     const ctx = { userId };
 
     const messages = [...sanitizeHistory(body.history).map((m) => (m.role === 'user' ? { role: 'user', text: m.text } : { role: 'assistant', text: m.text, calls: [] })), { role: 'user', text: message }];
-    // The history must end with the new user message and alternate sensibly.
     const cards = new Map();
     const used = [];
     let needsAuth = false;
@@ -142,4 +167,4 @@ module.exports = async function handler(req, res) {
 
 function safeJson(s) {
   try { return JSON.parse(s); } catch (_) { return null; }
-}
+      }
