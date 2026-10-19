@@ -42,6 +42,10 @@ export async function initLayout() {
     const { toast } = await import('./utils.js');
     toast(error && !String(error.message).includes('duplicate') ? 'Une erreur est survenue. Veuillez réessayer.' : 'Merci ! Vous êtes inscrit(e).', error && !String(error.message).includes('duplicate') ? 'err' : 'ok'); e.target.reset();
   });
+
+  // Assistant JLODNA As : chargé en temps libre, indépendant de la connexion, sans jamais bloquer la page
+  import('./jlodna-as-loader.js').catch((e) => console.warn('JLODNA As non chargé :', e && e.message));
+
   if (sb) {
     const u = await getUser();
     if (u) {
@@ -49,7 +53,6 @@ export async function initLayout() {
       initNotifications(); mergeServerCart();
       getAdminRole().then((r) => { if (r) a.insertAdjacentHTML('afterend', '<a class="icon-btn adm" href="/admin/" aria-label="Espace admin" title="Admin">⚙</a>'); });
     }
-    import('./jlodna-as-loader.js'); // assistant JLODNA As (chargé en temps libre, sans bloquer la page)
   }
   if ('serviceWorker' in navigator) navigator.serviceWorker.register('/sw.js').catch(() => {});
 }
