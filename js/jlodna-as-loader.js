@@ -22,7 +22,7 @@ if (!location.pathname.startsWith('/admin')) {
   );
   const load = () => {
     const s = document.createElement('script');
-    s.src = '/jlodna-as/widget.js';
+    s.src = '/js/jlodna-as-widget.js';
     s.defer = true;
     document.head.appendChild(s);
   };
