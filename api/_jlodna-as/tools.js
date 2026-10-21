@@ -6,18 +6,21 @@ const sbUrl = () => String(process.env.SUPABASE_URL || '').replace(/\/$/, '');
 const sbKey = () => process.env.SUPABASE_SERVICE_ROLE_KEY;
 
 async function rest(path, { method = 'GET', body, headers = {} } = {}) {
+  const key = sbKey();
   const r = await fetch(`${sbUrl()}/rest/v1/${path}`, {
     method,
     headers: {
-      apikey: sbKey(),
-      Authorization: `Bearer ${sbKey()}`,
+      apikey: key,
+      // Ancienne clé service_role (JWT, commence par "eyJ") : aussi dans Authorization.
+      // Nouvelle clé "sb_secret_..." : uniquement dans apikey (ce n'est pas un JWT).
+      ...(String(key).startsWith('eyJ') ? { Authorization: `Bearer ${key}` } : {}),
       'Content-Type': 'application/json',
       ...headers,
     },
     body: body ? JSON.stringify(body) : undefined,
     signal: AbortSignal.timeout(8000),
   });
-  if (!r.ok) throw new Error(`DB_${r.status}`);
+  if (!r.ok) throw new Error(`DB_${r.status} ${String(path).split('?')[0]}`); // code + table seulement, jamais le contenu
   const t = await r.text();
   return t ? JSON.parse(t) : null;
 }
@@ -320,6 +323,7 @@ async function runTool(name, input, ctx) {
   try {
     return await t.fn(input && typeof input === 'object' ? input : {}, ctx);
   } catch (e) {
+    console.warn('jlodna-as outil en échec :', name, e && e.message); // ex. "DB_401 products" : jamais de contenu client
     return { data: { error: 'SERVICE_TEMPORARILY_UNAVAILABLE' }, failed: true };
   }
 }
