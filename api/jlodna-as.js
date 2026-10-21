@@ -47,7 +47,7 @@ async function verifyUser(req) {
       headers: { apikey: process.env.SUPABASE_ANON_KEY, Authorization: `Bearer ${token}` },
       signal: AbortSignal.timeout(5000),
     });
-    if (!r.ok) return null;
+      if (!r.ok) throw new Error(`LLM_${r.status} ${body.model || ''}`);
     const u = await r.json();
     return u && /^[0-9a-f-]{36}$/i.test(u.id) ? u.id : null;
   } catch (_) {
