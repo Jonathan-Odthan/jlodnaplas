@@ -2,6 +2,7 @@
 // Provider abstraction. Normalized messages:
 //  {role:'user', text} | {role:'assistant', text, calls:[{id,name,input}]} | {role:'tool', results:[{id,name,output}]}
 // Env: AI_PROVIDER = anthropic (default) | openai (any OpenAI-compatible API), AI_API_KEY, AI_MODEL, AI_BASE_URL (optional)
+//      AI_FALLBACK_MODEL (optionnel) : modèle de secours si le premier est surchargé ou trop lent
 
 const TIMEOUT_MS = 25000;
 
@@ -13,17 +14,17 @@ function config() {
   return { provider, key, model, baseUrl: process.env.AI_BASE_URL };
 }
 
-async function post(url, headers, body) {
+async function post(url, headers, body, timeoutMs = TIMEOUT_MS) {
   const r = await fetch(url, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', ...headers },
     body: JSON.stringify(body),
-    signal: AbortSignal.timeout(TIMEOUT_MS),
+    signal: AbortSignal.timeout(timeoutMs),
   });
   if (!r.ok) {
     let detail = '';
     try { detail = (await r.text()).replace(/\s+/g, ' ').slice(0, 300); } catch (_) { /* ignore */ }
-    console.warn('jlodna-as détail fournisseur IA :', r.status, detail); // message d'erreur du fournisseur, tronqué
+    console.warn(`jlodna-as détail fournisseur IA : statut ${r.status} - TEXTE: ${detail}`); // message d'erreur du fournisseur, tronqué
     throw new Error(`LLM_${r.status} ${body.model || ''}`);
   }
   return r.json();
@@ -53,7 +54,8 @@ const anthropic = {
         system,
         messages: msgs,
         tools: tools.map((t) => ({ name: t.name, description: t.description, input_schema: t.schema })),
-      }
+      },
+      cfg.timeoutMs
     );
     const blocks = data.content || [];
     return {
@@ -102,7 +104,8 @@ const openai = {
         max_tokens: 900,
         messages: msgs,
         ...(tools.length ? { tools: tools.map(toOpenAiTool) } : {}),
-      }
+      },
+      cfg.timeoutMs
     );
     const msg = (data.choices && data.choices[0] && data.choices[0].message) || {};
     return {
@@ -118,12 +121,37 @@ const openai = {
 
 const ADAPTERS = { anthropic, openai };
 
+// Erreurs temporaires du fournisseur (surcharge 503/429/5xx, délai dépassé) : on réessaie une fois.
+const isRetryable = (e) =>
+  /^LLM_(429|500|502|503|504)\b/.test(String(e && e.message)) || (e && (e.name === 'TimeoutError' || e.name === 'AbortError'));
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
 function getLLM() {
   const cfg = config();
   if (!cfg) return null;
   const adapter = ADAPTERS[cfg.provider];
   if (!adapter) return null;
-  return { step: (args) => adapter.step(cfg, args) };
+  // Tentative 1 : AI_MODEL (15 s). Tentative 2 : AI_FALLBACK_MODEL si défini, sinon le même modèle (12 s).
+  const attempts = [
+    { model: cfg.model, timeoutMs: 15000 },
+    { model: process.env.AI_FALLBACK_MODEL || cfg.model, timeoutMs: 12000 },
+  ];
+  return {
+    async step(args) {
+      let lastErr;
+      for (let i = 0; i < attempts.length; i++) {
+        try {
+          return await adapter.step({ ...cfg, ...attempts[i] }, args);
+        } catch (e) {
+          lastErr = e;
+          console.warn(`jlodna-as tentative ${i + 1} échouée :`, e && (e.name === 'TimeoutError' ? 'délai dépassé' : e.message));
+          if (!isRetryable(e)) throw e;
+          await sleep(600);
+        }
+      }
+      throw lastErr;
+    },
+  };
 }
 
 module.exports = { getLLM };
