@@ -20,7 +20,12 @@ async function post(url, headers, body) {
     body: JSON.stringify(body),
     signal: AbortSignal.timeout(TIMEOUT_MS),
   });
-  if (!r.ok) throw new Error(`LLM_${r.status}`);
+  if (!r.ok) {
+    let detail = '';
+    try { detail = (await r.text()).replace(/\s+/g, ' ').slice(0, 300); } catch (_) { /* ignore */ }
+    console.warn('jlodna-as détail fournisseur IA :', r.status, detail); // message d'erreur du fournisseur, tronqué
+    throw new Error(`LLM_${r.status} ${body.model || ''}`);
+  }
   return r.json();
 }
 
@@ -58,6 +63,18 @@ const anthropic = {
   },
 };
 
+// Gemini (API compatible OpenAI) refuse un schéma d'outil avec "properties" vide ou "required" vide.
+function toOpenAiTool(t) {
+  const props = (t.schema && t.schema.properties) || {};
+  const fn = { name: t.name, description: t.description };
+  if (Object.keys(props).length) {
+    const schema = { type: 'object', properties: props };
+    if (t.schema.required && t.schema.required.length) schema.required = t.schema.required;
+    fn.parameters = schema;
+  }
+  return { type: 'function', function: fn };
+}
+
 const openai = {
   async step(cfg, { system, messages, tools }) {
     const msgs = [{ role: 'system', content: system }];
@@ -74,7 +91,7 @@ const openai = {
         }
         msgs.push(o);
       } else {
-        for (const r of m.results) msgs.push({ role: 'tool', tool_call_id: r.id, content: r.output });
+        for (const r of m.results) msgs.push({ role: 'tool', tool_call_id: r.id, name: r.name, content: r.output });
       }
     }
     const data = await post(
@@ -84,16 +101,16 @@ const openai = {
         model: cfg.model,
         max_tokens: 900,
         messages: msgs,
-        tools: tools.map((t) => ({ type: 'function', function: { name: t.name, description: t.description, parameters: t.schema } })),
+        ...(tools.length ? { tools: tools.map(toOpenAiTool) } : {}),
       }
     );
     const msg = (data.choices && data.choices[0] && data.choices[0].message) || {};
     return {
       text: (msg.content || '').trim(),
-      calls: (msg.tool_calls || []).map((c) => {
+      calls: (msg.tool_calls || []).map((c, i) => {
         let input = {};
         try { input = JSON.parse(c.function.arguments || '{}'); } catch (_) { /* ignore */ }
-        return { id: c.id, name: c.function.name, input };
+        return { id: c.id || `call_${Date.now()}_${i}`, name: c.function.name, input };
       }),
     };
   },
