@@ -1,8 +1,10 @@
 'use strict';
 // Provider abstraction. Normalized messages:
 //  {role:'user', text} | {role:'assistant', text, calls:[{id,name,input}]} | {role:'tool', results:[{id,name,output}]}
-// Env: AI_PROVIDER = anthropic (default) | openai (any OpenAI-compatible API), AI_API_KEY, AI_MODEL, AI_BASE_URL (optional)
+// Env: AI_PROVIDER = anthropic (défaut) | openai (toute API compatible OpenAI, ex. Gemini)
+//      AI_API_KEY, AI_MODEL, AI_BASE_URL (optionnel)
 //      AI_FALLBACK_MODEL (optionnel) : modèle de secours si le premier est surchargé ou trop lent
+//      AI_REASONING_EFFORT (optionnel, ex. low) : réponses plus rapides avec les modèles qui réfléchissent
 
 const TIMEOUT_MS = 25000;
 
@@ -24,7 +26,7 @@ async function post(url, headers, body, timeoutMs = TIMEOUT_MS) {
   if (!r.ok) {
     let detail = '';
     try { detail = (await r.text()).replace(/\s+/g, ' ').slice(0, 300); } catch (_) { /* ignore */ }
-    console.warn(`jlodna-as détail fournisseur IA : statut ${r.status} - TEXTE: ${detail}`); // message d'erreur du fournisseur, tronqué
+    console.warn(`jlodna-as détail fournisseur IA : statut ${r.status} - TEXTE: ${detail}`); // message du fournisseur, tronqué
     throw new Error(`LLM_${r.status} ${body.model || ''}`);
   }
   return r.json();
@@ -104,6 +106,7 @@ const openai = {
         max_tokens: 900,
         messages: msgs,
         ...(tools.length ? { tools: tools.map(toOpenAiTool) } : {}),
+        ...(process.env.AI_REASONING_EFFORT ? { reasoning_effort: process.env.AI_REASONING_EFFORT } : {}), // ex. low : réponses plus rapides
       },
       cfg.timeoutMs
     );
@@ -131,10 +134,10 @@ function getLLM() {
   if (!cfg) return null;
   const adapter = ADAPTERS[cfg.provider];
   if (!adapter) return null;
-  // Tentative 1 : AI_MODEL (15 s). Tentative 2 : AI_FALLBACK_MODEL si défini, sinon le même modèle (12 s).
+  // Tentative 1 : AI_MODEL (20 s). Tentative 2 : AI_FALLBACK_MODEL si défini, sinon le même modèle (15 s).
   const attempts = [
-    { model: cfg.model, timeoutMs: 15000 },
-    { model: process.env.AI_FALLBACK_MODEL || cfg.model, timeoutMs: 12000 },
+    { model: cfg.model, timeoutMs: 20000 },
+    { model: process.env.AI_FALLBACK_MODEL || cfg.model, timeoutMs: 15000 },
   ];
   return {
     async step(args) {
