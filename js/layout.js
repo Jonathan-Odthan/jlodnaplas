@@ -44,7 +44,7 @@ export async function initLayout() {
   });
 
   // Assistant JLODNA As : chargé en temps libre, indépendant de la connexion, sans jamais bloquer la page
-  import('./jlodna-as-loader.js').catch((e) => console.warn('JLODNA As non chargé :', e && e.message));
+ // import('./jlodna-as-loader.js').catch((e) => console.warn('JLODNA As non chargé :', e && e.message));
 
   if (sb) {
     const u = await getUser();
